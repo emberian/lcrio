@@ -2,7 +2,7 @@ use anyhow::Result;
 use rmcp::{
     ServerHandler, ServiceExt,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
+    model::{CallToolResult, Content, Implementation, ServerCapabilities, ServerInfo},
     schemars, tool, tool_handler, tool_router,
     transport::stdio,
 };
@@ -12,15 +12,23 @@ use tracing_subscriber::EnvFilter;
 use lcrio::Lcrio;
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchMode {
+    /// Match crate names (exact, prefix, contains, fuzzy)
+    Name,
+    /// Find crates that depend on the query crate
+    Dep,
+    /// Find crates with this feature name
+    Feature,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SearchCratesRequest {
     #[schemars(description = "Search query (crate name, partial name, or keyword)")]
     pub query: String,
 
-    #[schemars(description = "Search for crates that depend on this crate instead of name search")]
-    pub by_dep: Option<bool>,
-
-    #[schemars(description = "Search for crates with this feature name instead of name search")]
-    pub by_feature: Option<bool>,
+    #[schemars(description = "Search mode: 'name' (default) matches crate names, 'dep' finds crates depending on the query, 'feature' finds crates with this feature")]
+    pub mode: Option<SearchMode>,
 
     #[schemars(description = "Maximum number of results (default: 20)")]
     pub limit: Option<usize>,
@@ -59,6 +67,18 @@ pub struct ReadCrateFileRequest {
     pub version: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UnpackCrateRequest {
+    #[schemars(description = "Name of the crate")]
+    pub name: String,
+
+    #[schemars(description = "Specific version (default: latest non-yanked)")]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CleanCacheRequest {}
+
 #[derive(Clone)]
 pub struct LcrioMcpServer {
     lcrio: &'static Lcrio,
@@ -89,50 +109,54 @@ impl LcrioMcpServer {
 
 #[tool_router]
 impl LcrioMcpServer {
-    #[tool(description = "Search for Rust crates by name (exact, prefix, contains, fuzzy matching), or search for crates that depend on a given crate, or crates with a specific feature. Uses a local crate source (panamax mirror or cargo registry).")]
+    #[tool(description = "Search for Rust crates by name, dependency, or feature. Uses a local crate source (panamax mirror or cargo registry).")]
     fn search_crates(
         &self,
         Parameters(req): Parameters<SearchCratesRequest>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let limit = req.limit.unwrap_or(20);
+        let mode = req.mode.unwrap_or(SearchMode::Name);
 
-        if req.by_dep.unwrap_or(false) {
-            let results = self.lcrio.search_by_dep(&req.query, Some(limit));
-            let text = if results.is_empty() {
-                format!("No crates found that depend on '{}'", req.query)
-            } else {
-                let mut out = format!("Crates depending on '{}' ({} results):\n", req.query, results.len());
-                for name in &results {
-                    out.push_str(&format!("  {}\n", name));
+        let text = match mode {
+            SearchMode::Dep => {
+                let results = self.lcrio.search_by_dep(&req.query, Some(limit));
+                if results.is_empty() {
+                    format!("No crates found that depend on '{}'", req.query)
+                } else {
+                    let mut out = format!("Crates depending on '{}' ({} results):\n", req.query, results.len());
+                    for name in &results {
+                        out.push_str(&format!("  {}\n", name));
+                    }
+                    out
                 }
-                out
-            };
-            Ok(CallToolResult::success(vec![Content::text(text)]))
-        } else if req.by_feature.unwrap_or(false) {
-            let results = self.lcrio.search_by_feature(&req.query, Some(limit));
-            let text = if results.is_empty() {
-                format!("No crates found with feature '{}'", req.query)
-            } else {
-                let mut out = format!("Crates with feature '{}' ({} results):\n", req.query, results.len());
-                for name in &results {
-                    out.push_str(&format!("  {}\n", name));
+            }
+            SearchMode::Feature => {
+                let results = self.lcrio.search_by_feature(&req.query, Some(limit));
+                if results.is_empty() {
+                    format!("No crates found with feature '{}'", req.query)
+                } else {
+                    let mut out = format!("Crates with feature '{}' ({} results):\n", req.query, results.len());
+                    for name in &results {
+                        out.push_str(&format!("  {}\n", name));
+                    }
+                    out
                 }
-                out
-            };
-            Ok(CallToolResult::success(vec![Content::text(text)]))
-        } else {
-            let results = self.lcrio.search(&req.query, Some(limit));
-            let text = if results.is_empty() {
-                format!("No crates found matching '{}'", req.query)
-            } else {
-                let mut out = format!("Search results for '{}' ({} results):\n", req.query, results.len());
-                for r in &results {
-                    out.push_str(&format!("  {:<40} {:.2}  ({})\n", r.name, r.score, r.match_type));
+            }
+            SearchMode::Name => {
+                let results = self.lcrio.search(&req.query, Some(limit));
+                if results.is_empty() {
+                    format!("No crates found matching '{}'", req.query)
+                } else {
+                    let mut out = format!("Search results for '{}' ({} results):\n", req.query, results.len());
+                    for r in &results {
+                        out.push_str(&format!("  {:<40} {:.2}  ({})\n", r.name, r.score, r.match_type));
+                    }
+                    out
                 }
-                out
-            };
-            Ok(CallToolResult::success(vec![Content::text(text)]))
-        }
+            }
+        };
+
+        Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
     #[tool(description = "Get metadata for a specific Rust crate: versions, dependencies, and features. Uses a local crate source (panamax mirror or cargo registry).")]
@@ -279,17 +303,58 @@ impl LcrioMcpServer {
             ))])),
         }
     }
+
+    #[tool(description = "Extract a Rust crate to the filesystem and return its path. Useful for exploring source with standard file tools. Caches extractions for reuse.")]
+    fn unpack_crate(
+        &self,
+        Parameters(req): Parameters<UnpackCrateRequest>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let version = match self.resolve_version(&req.name, req.version.as_deref()) {
+            Ok(v) => v,
+            Err(e) => return Ok(CallToolResult::error(vec![Content::text(e)])),
+        };
+
+        match self.lcrio.unpack(&req.name, &version) {
+            Ok(result) => {
+                let cached = if result.was_cached { " (cached)" } else { "" };
+                Ok(CallToolResult::success(vec![Content::text(
+                    format!("{}{}", result.path.display(), cached),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "Error unpacking '{}' v{}: {:#}",
+                req.name, version, e
+            ))])),
+        }
+    }
+
+    #[tool(description = "Purge the crate extraction cache to free disk space.")]
+    fn clean_cache(
+        &self,
+        Parameters(_req): Parameters<CleanCacheRequest>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        match self.lcrio.clean() {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Cache cleaned.")])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "Error cleaning cache: {:#}", e
+            ))])),
+        }
+    }
 }
 
 #[tool_handler]
 impl ServerHandler for LcrioMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
+            server_info: Implementation {
+                name: "lcrio".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                ..Default::default()
+            },
             instructions: Some(
-                "MCP server for searching and browsing Rust crates from a local crate source \
-                 (panamax mirror or cargo registry). Provides tools to search crates, view \
-                 metadata, list files, and read source code. Auto-detects source and filters \
-                 to workspace dependencies when a Cargo.lock is found."
+                "Search, browse, and read Rust crate source code from a local mirror or \
+                 cargo registry. Auto-detects source and filters to workspace dependencies \
+                 when a Cargo.lock is found."
                     .to_string(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),

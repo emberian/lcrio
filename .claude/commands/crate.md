@@ -2,34 +2,28 @@
 argument-hint: <crate name or search query>
 ---
 
-Use the `lcrio` CLI to search and browse Rust crates from a local source (panamax mirror or cargo registry). Auto-detects which source is available: panamax at ~/crates.io/full/ if present, otherwise ~/.cargo/registry/. Workspace filtering is on by default when a Cargo.lock is found nearby.
+Browse and read Rust crate source code offline from a local mirror or cargo registry.
 
-Global flags:
+Prefer the lcrio MCP tools for individual operations — they avoid shell overhead:
+- `search_crates` — search by name, dependency, or feature
+- `crate_info` — versions, deps, and features in one call
+- `list_crate_files` / `read_crate_file` — browse source
+- `unpack_crate` / `clean_cache` — manage extraction cache
 
-- `--source panamax|cargo` — Force a specific crate source (default: auto-detect)
-- `--all` — Disable workspace filtering (show all available crates)
+Use this skill's CLI workflow below when you need flags like `--json`, `--all`, or `--source`, or when the user explicitly invokes `/crate`.
 
-Available commands:
+## CLI reference
 
-- `lcrio search <query>` — Search for crates by name (exact, prefix, contains, fuzzy)
-  - `--dep` — Find crates that depend on the query crate
-  - `--feature` — Find crates with this feature name
-  - `--limit N` — Max results (default 20)
-  - `--json` — Output as JSON
+Global flags: `--source panamax|cargo` (force source), `--all` (disable workspace filter)
 
-- `lcrio info <crate> [--latest]` — Show version history and metadata
-
-- `lcrio deps <crate> [version]` — List dependencies (default: latest version)
-
-- `lcrio features <crate> [version]` — List features
-
-- `lcrio unpack <crate> [version]` — Extract .crate and print path
-
-- `lcrio ls <crate> [version] [--pattern "src/**/*.rs"]` — List files in a crate
-
-- `lcrio cat <crate> <path> [version]` — Read a specific file from a crate
-
-- `lcrio clean` — Purge extraction cache
+- `lcrio search <query> [--dep] [--feature] [--limit N] [--json]`
+- `lcrio info <crate> [--latest]`
+- `lcrio deps <crate> [version]`
+- `lcrio features <crate> [version]`
+- `lcrio unpack <crate> [version]`
+- `lcrio ls <crate> [version] [--pattern "src/**/*.rs"]`
+- `lcrio cat <crate> <path> [version]`
+- `lcrio clean`
 
 ## Workflow for "$ARGUMENTS"
 
