@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "lcrio": {
+      "command": "/Users/ember/dev/lcrio/target/release/lcrio-mcp"
+    }
+  }
+}

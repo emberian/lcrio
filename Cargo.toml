@@ -1,0 +1,43 @@
+[package]
+name = "lcrio"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "lcrio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lcrio"
+path = "bin/lcrio.rs"
+
+[[bin]]
+name = "lcrio-mcp"
+path = "bin/lcrio-mcp.rs"
+
+[dependencies]
+# MCP
+rmcp = { version = "0.11", features = ["server", "macros", "transport-io", "schemars"] }
+schemars = "1.0"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Core
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1", features = ["full"] }
+
+# Crate extraction
+flate2 = "1"
+tar = "0.4"
+
+# Search
+strsim = "0.11"
+
+# File traversal
+walkdir = "2"
