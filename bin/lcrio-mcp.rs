@@ -67,8 +67,8 @@ pub struct LcrioMcpServer {
 
 impl LcrioMcpServer {
     pub fn new() -> Self {
-        // Leak a Box to get 'static lifetime - server runs for process lifetime anyway
-        let lcrio = Box::leak(Box::new(Lcrio::with_defaults()));
+        // Auto-detect source, workspace-aware
+        let lcrio = Box::leak(Box::new(Lcrio::with_options(None, true)));
         Self {
             lcrio,
             tool_router: Self::tool_router(),
@@ -89,7 +89,7 @@ impl LcrioMcpServer {
 
 #[tool_router]
 impl LcrioMcpServer {
-    #[tool(description = "Search for Rust crates by name (exact, prefix, contains, fuzzy matching), or search for crates that depend on a given crate, or crates with a specific feature. Uses a local panamax mirror of crates.io.")]
+    #[tool(description = "Search for Rust crates by name (exact, prefix, contains, fuzzy matching), or search for crates that depend on a given crate, or crates with a specific feature. Uses a local crate source (panamax mirror or cargo registry).")]
     fn search_crates(
         &self,
         Parameters(req): Parameters<SearchCratesRequest>,
@@ -135,7 +135,7 @@ impl LcrioMcpServer {
         }
     }
 
-    #[tool(description = "Get metadata for a specific Rust crate: versions, dependencies, and features. Uses a local panamax mirror of crates.io.")]
+    #[tool(description = "Get metadata for a specific Rust crate: versions, dependencies, and features. Uses a local crate source (panamax mirror or cargo registry).")]
     fn crate_info(
         &self,
         Parameters(req): Parameters<CrateInfoRequest>,
@@ -228,7 +228,7 @@ impl LcrioMcpServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
-    #[tool(description = "List files in an extracted Rust crate with optional glob pattern filter. Automatically extracts the crate if not cached. Uses a local panamax mirror.")]
+    #[tool(description = "List files in an extracted Rust crate with optional glob pattern filter. Automatically extracts the crate if not cached.")]
     fn list_crate_files(
         &self,
         Parameters(req): Parameters<ListCrateFilesRequest>,
@@ -261,7 +261,7 @@ impl LcrioMcpServer {
         }
     }
 
-    #[tool(description = "Read a specific file from an extracted Rust crate. Automatically extracts the crate if not cached. Uses a local panamax mirror.")]
+    #[tool(description = "Read a specific file from an extracted Rust crate. Automatically extracts the crate if not cached.")]
     fn read_crate_file(
         &self,
         Parameters(req): Parameters<ReadCrateFileRequest>,
@@ -286,9 +286,10 @@ impl ServerHandler for LcrioMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "MCP server for searching and browsing Rust crates from a local panamax \
-                 mirror of crates.io. Provides tools to search crates, view metadata, \
-                 list files, and read source code."
+                "MCP server for searching and browsing Rust crates from a local crate source \
+                 (panamax mirror or cargo registry). Provides tools to search crates, view \
+                 metadata, list files, and read source code. Auto-detects source and filters \
+                 to workspace dependencies when a Cargo.lock is found."
                     .to_string(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),

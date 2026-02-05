@@ -1,10 +1,25 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use lcrio::Lcrio;
+use lcrio::config::CrateSource;
+
+#[derive(Debug, Clone, ValueEnum)]
+enum SourceArg {
+    Panamax,
+    Cargo,
+}
 
 #[derive(Parser)]
-#[command(name = "lcrio", about = "Search and browse crates from a local panamax mirror")]
+#[command(name = "lcrio", about = "Search and browse crates from a local crate source")]
 struct Cli {
+    /// Force crate source (default: auto-detect)
+    #[arg(long, global = true)]
+    source: Option<SourceArg>,
+
+    /// Disable workspace filtering (show all crates)
+    #[arg(long, global = true)]
+    all: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -79,6 +94,37 @@ enum Commands {
     Clean,
 }
 
+fn resolve_source(arg: Option<SourceArg>) -> Option<CrateSource> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    match arg {
+        Some(SourceArg::Panamax) => {
+            Some(CrateSource::Panamax {
+                root: std::path::PathBuf::from(&home).join("crates.io/full"),
+            })
+        }
+        Some(SourceArg::Cargo) => {
+            let cargo_home = std::path::PathBuf::from(&home).join(".cargo");
+            // Discover the registry hash
+            let src_dir = cargo_home.join("registry/src");
+            let hash = std::fs::read_dir(&src_dir)
+                .ok()
+                .and_then(|entries| {
+                    entries.flatten().find_map(|e| {
+                        let name = e.file_name().to_string_lossy().to_string();
+                        if name.starts_with("index.crates.io-") {
+                            Some(name)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .unwrap_or_else(|| "index.crates.io-unknown".to_string());
+            Some(CrateSource::Cargo { cargo_home, registry_hash: hash })
+        }
+        None => None,
+    }
+}
+
 fn resolve_version(lcrio: &Lcrio, name: &str, version: Option<&str>) -> Result<String> {
     match version {
         Some(v) => Ok(v.to_string()),
@@ -88,7 +134,17 @@ fn resolve_version(lcrio: &Lcrio, name: &str, version: Option<&str>) -> Result<S
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let lcrio = Lcrio::with_defaults();
+    let source = resolve_source(cli.source);
+    let lcrio = Lcrio::with_options(source, !cli.all);
+
+    // Show source info on stderr for search command
+    if matches!(cli.command, Commands::Search { .. }) {
+        let label = lcrio.config.source_label();
+        match &lcrio.config.workspace_filter {
+            Some(filter) => eprintln!("source: {}, workspace: {} crates", label, filter.len()),
+            None => eprintln!("source: {}", label),
+        }
+    }
 
     match cli.command {
         Commands::Search { query, dep, feature, limit, json } => {

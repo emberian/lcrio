@@ -2,7 +2,12 @@
 argument-hint: <crate name or search query>
 ---
 
-Use the `lcrio` CLI to search and browse Rust crates from the local panamax mirror of crates.io. The full index and all .crate files are available locally at ~/crates.io/full/.
+Use the `lcrio` CLI to search and browse Rust crates from a local source (panamax mirror or cargo registry). Auto-detects which source is available: panamax at ~/crates.io/full/ if present, otherwise ~/.cargo/registry/. Workspace filtering is on by default when a Cargo.lock is found nearby.
+
+Global flags:
+
+- `--source panamax|cargo` — Force a specific crate source (default: auto-detect)
+- `--all` — Disable workspace filtering (show all available crates)
 
 Available commands:
 

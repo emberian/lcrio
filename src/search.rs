@@ -1,6 +1,30 @@
 use std::path::Path;
 use walkdir::WalkDir;
 
+/// Build a sorted Vec of crate names from a cargo registry src directory.
+///
+/// Each entry in src/ is `{name}-{version}`. We split on the last `-` to extract
+/// the name, deduplicate, and sort.
+pub fn build_name_index_from_src(src_root: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    let entries = match std::fs::read_dir(src_root) {
+        Ok(e) => e,
+        Err(_) => return names,
+    };
+    for entry in entries.flatten() {
+        let fname = entry.file_name().to_string_lossy().to_string();
+        if let Some(pos) = fname.rfind('-') {
+            let name = &fname[..pos];
+            if !name.is_empty() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
 /// Build a sorted Vec of all crate names from the index directory.
 pub fn build_name_index(index_root: &Path) -> Vec<String> {
     let mut names = Vec::with_capacity(250_000);

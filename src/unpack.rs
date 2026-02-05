@@ -89,6 +89,27 @@ pub fn unpack_latest(
     Ok((result, latest.vers))
 }
 
+/// Return the pre-extracted source path from cargo registry src directory.
+/// In cargo mode, sources are already extracted at `src_root/{name}-{version}/`.
+pub fn cargo_source_path(
+    src_root: &Path,
+    name: &str,
+    version: &str,
+) -> Result<UnpackResult> {
+    let dir = src_root.join(format!("{}-{}", name, version));
+    if dir.exists() {
+        Ok(UnpackResult {
+            path: dir,
+            was_cached: true,
+        })
+    } else {
+        anyhow::bail!(
+            "source not found at {} — try running `cargo fetch` in your project",
+            dir.display()
+        )
+    }
+}
+
 /// Remove the entire unpacked cache.
 pub fn clean_cache(cache_dir: &Path) -> Result<()> {
     let unpacked = cache_dir.join("unpacked");

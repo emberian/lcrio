@@ -33,6 +33,12 @@ pub fn crate_file_path(crates_root: &std::path::Path, name: &str, version: &str)
         .join(format!("{}-{}.crate", lower, version))
 }
 
+/// Resolve the path to a .crate file in cargo's flat layout.
+/// Cargo stores .crate files as `{cache_root}/{name}-{version}.crate` (flat, no prefix dirs).
+pub fn crate_file_path_flat(cache_root: &std::path::Path, name: &str, version: &str) -> PathBuf {
+    cache_root.join(format!("{}-{}.crate", name, version))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
